@@ -1,0 +1,129 @@
+use core::str;
+use std::error::Error;
+use embedded_svc::http::client::Client;
+use esp_idf_svc::http::{
+    client::{Configuration, EspHttpConnection},
+    Method,
+};
+use serde::Serialize;
+use serde_json::json;
+
+pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
+
+pub struct Http {
+    sol_endpoint: String,
+    http_client: Client<EspHttpConnection>,
+}
+
+impl Http {
+    pub fn init(endpoint: &str) -> Result<Self, Box<dyn Error>> {
+        let connection = EspHttpConnection::new(&Configuration {
+            timeout: Some(std::time::Duration::from_secs(30)),
+            use_global_ca_store: true,
+            crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+            ..Default::default()
+        })?;
+        let client = Client::wrap(connection);
+        Ok(Self {
+            sol_endpoint: endpoint.to_string(),
+            http_client: client,
+        })
+    }
+
+    pub fn http_request(
+        &mut self,
+        method: Method,
+        uri: &str,
+        headers: &[(&str, &str)],
+        payload: Option<&str>,
+    ) -> Result<serde_json::Value, Box<dyn Error>> {
+        let client = &mut self.http_client;
+        let mut request = client.request(method, uri, &headers)?;
+        if let Some(payload_str) = payload {
+            request.write(payload_str.as_bytes())?;
+        };
+        let response = request.submit()?;
+        let status = response.status();
+
+        println!("Response code: {}\n", status);
+        if !(200..=299).contains(&status) {
+            return Err(format!("HTTP Error: Status code {}", status).into());
+        }
+
+        // read the response body in chunks
+        let mut buf = [0_u8; 256]; // buffer for storing chunks
+        let mut response_body = String::new(); // string to hold the full response
+        let mut reader = response;
+        loop {
+            let size = reader.read(&mut buf)?; // read data into the buffer
+            if size == 0 {
+                break; // exit loop when no more data is available
+            }
+            response_body.push_str(str::from_utf8(&buf[..size])?); // append the chunk to the response body
+        }
+        println!("Raw response body: {}", response_body);
+        // deserialize the response JSON
+        let json_response: serde_json::Value = serde_json::from_str(&response_body)?;
+
+        // result
+        Ok(json_response.clone())
+    }
+
+    pub fn http_sol_request<Params>(
+        &mut self,
+        method: &str,
+        params: Params,
+    ) -> Result<serde_json::Value, Box<dyn Error>>
+    where
+        Params: Serialize,
+    {
+        let payload = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": method,
+                "params": [params]
+        });
+
+        let payload_str = serde_json::to_string(&payload)?;
+
+        let headers = [
+            ("Content-Type", "application/json"),
+            ("Content-Length", &payload_str.len().to_string()),
+        ];
+        let endpoint = self.sol_endpoint.clone();
+        let result = self.http_request(Method::Post, &endpoint, &headers, Some(&payload_str))?;
+        Ok(result["result"].clone())
+    }
+
+    pub fn get_balance(&mut self, wallet: &str) -> Result<u64, Box<dyn Error>> {
+        let method = "getBalance";
+        let balance = self.http_sol_request(method, wallet).unwrap()["value"]
+            .as_u64()
+            .unwrap_or(0);
+        Ok(balance)
+    }
+
+    pub fn get_tps(&mut self) -> Result<(u64, u64), Box<dyn Error>> {
+        let method = "getRecentPerformanceSamples";
+        let rps = self.http_sol_request(method, 1).unwrap();
+
+        let rps_result = rps
+            .as_array()
+            .and_then(|array| array.get(0))
+            .ok_or("no performance samples found in the response")?;
+
+        let num_tx = rps_result["numTransactions"].as_u64().unwrap_or(0);
+        let slot = rps_result["slot"].as_u64().unwrap_or(0);
+        let total_tx = num_tx / 60;
+
+        Ok((slot, total_tx))
+    }
+
+    pub fn get_solana_price(&mut self) -> Result<f64, Box<dyn Error>> {
+        let headers = [("accept", "application/json")];
+        let url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
+        let result = self.http_request(Method::Get, &url, &headers, None)?;
+        let sol_price = result["solana"]["usd"].as_f64().unwrap_or(0.0);
+        Ok(sol_price)
+    }
+}
