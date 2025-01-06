@@ -1,0 +1,4 @@
+[esp32-ssd1306-solana]
+wifi_ssid = "YOUR WIFI NAME: HOME123"
+wifi_psk = "YOUR WIFI PASSWORD: SOLANATHEBEST123"
+sol_rpc = "YOUR SOL RPC"
