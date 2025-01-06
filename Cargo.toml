@@ -1,7 +1,7 @@
 [package]
 name = "esp32-ssd1306-solana"
 version = "0.1.0"
-authors = ["Mantistc <omarmuhieddinedarwich@gmail.com>"]
+authors = ["Mantistc"]
 edition = "2021"
 resolver = "2"
 rust-version = "1.77"
