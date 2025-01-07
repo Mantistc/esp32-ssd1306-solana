@@ -18,8 +18,6 @@ pub fn wifi(modem: Modem, ssid: &str, password: &str) -> BlockingWifi<EspWifi<'s
 
     wifi.start().unwrap();
 
-    info!("Connecting wifi...");
-
     // let networks = wifi.scan().unwrap();
     // for network in networks {
     //     info!("SSID: {}, RSSI: {}", network.ssid, network.signal_strength);

@@ -1,5 +1,4 @@
 use core::str;
-use std::error::Error;
 use embedded_svc::http::client::Client;
 use esp_idf_svc::http::{
     client::{Configuration, EspHttpConnection},
@@ -7,6 +6,7 @@ use esp_idf_svc::http::{
 };
 use serde::Serialize;
 use serde_json::json;
+use std::error::Error;
 
 pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
 
@@ -97,10 +97,16 @@ impl Http {
 
     pub fn get_balance(&mut self, wallet: &str) -> Result<u64, Box<dyn Error>> {
         let method = "getBalance";
-        let balance = self.http_sol_request(method, wallet).unwrap()["value"]
-            .as_u64()
-            .unwrap_or(0);
-        Ok(balance)
+        match self.http_sol_request(method, wallet) {
+            Ok(response) => {
+                let balance = response["value"].as_u64().unwrap_or(0);
+                Ok(balance)
+            }
+            Err(e) => {
+                println!("Error occurred: {}", e);
+                Ok(0)
+            }
+        }
     }
 
     pub fn get_tps(&mut self) -> Result<(u64, u64), Box<dyn Error>> {
