@@ -60,6 +60,7 @@ fn main() {
 
     let is_on = Arc::new(AtomicBool::new(true));
     let is_on_clone = Arc::clone(&is_on);
+    let mut display_module = DisplayModule::init(i2c, sda, scl);
 
     std::thread::spawn(move || loop {
         if button.is_low() {
@@ -68,12 +69,14 @@ fn main() {
                 "Button toggled. is_on: {}",
                 is_on_clone.load(Ordering::SeqCst)
             );
+        } else {
+            std::thread::sleep(Duration::from_millis(500)); // pulse btn time
+            continue;
         }
-        std::thread::sleep(Duration::from_millis(175));
+        std::thread::sleep(Duration::from_millis(10000)); // min time to change the state (On,Off) again
     });
 
     // initialize display
-    let mut display_module = DisplayModule::init(i2c, sda, scl);
 
     let solana_cool_app_text = "Connecting wifi...";
 
@@ -97,16 +100,15 @@ fn main() {
     led_1.set_high().unwrap();
 
     display_module.create_centered_text(&device_ready, FONT_6X10);
-    display_module.create_black_rectangle();
 
     led_1.set_low().unwrap();
     let mut previous_state = true;
     loop {
         let show_data = is_on.load(Ordering::SeqCst);
         if show_data {
+            display_module.create_black_rectangle();
             if !previous_state {
                 previous_state = true;
-                display_module.create_black_rectangle();
             }
             led_3.set_low().unwrap();
             let max_width_size = 128;
@@ -197,12 +199,11 @@ fn main() {
                 FONT_6X10,
             );
 
-            std::thread::sleep(Duration::from_millis(3000));
-            display_module.create_black_rectangle();
+            std::thread::sleep(Duration::from_millis(1500));
         } else if !show_data && previous_state {
+            display_module.create_black_rectangle();
             println!("Device Off");
-            let solana_cool_app_text = "Device Off";
-            display_module.create_centered_text(&solana_cool_app_text, FONT_6X10);
+            display_module.draw_image();
             led_2.set_low().unwrap();
             led_3.set_high().unwrap();
             previous_state = false;

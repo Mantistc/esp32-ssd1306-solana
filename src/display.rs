@@ -1,4 +1,5 @@
 use embedded_graphics::{
+    image::{Image, ImageRaw},
     mono_font::{MonoFont, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::{Point, Primitive, Size},
@@ -105,5 +106,15 @@ impl DisplayModule {
             .into_styled(on)
             .draw(display)
             .unwrap();
+    }
+
+    pub fn draw_image(&mut self) {
+        let display = &mut self.display;
+        let size = 32i32;
+        let raw: ImageRaw<BinaryColor> =
+            ImageRaw::new(include_bytes!("../sol_logo.raw"), size as u32);
+        let im = Image::new(&raw, Point::new((128 - size) / 2, (64 - size) / 2));
+        im.draw(display).unwrap();
+        display.flush().unwrap();
     }
 }

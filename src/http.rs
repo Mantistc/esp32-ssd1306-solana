@@ -111,25 +111,38 @@ impl Http {
 
     pub fn get_tps(&mut self) -> Result<(u64, u64), Box<dyn Error>> {
         let method = "getRecentPerformanceSamples";
-        let rps = self.http_sol_request(method, 1).unwrap();
 
-        let rps_result = rps
-            .as_array()
-            .and_then(|array| array.get(0))
-            .ok_or("no performance samples found in the response")?;
+        match self.http_sol_request(method, 1) {
+            Ok(rps) => {
+                let rps_result = rps
+                    .as_array()
+                    .and_then(|array| array.get(0))
+                    .ok_or("no performance samples found in the response")?;
 
-        let num_tx = rps_result["numTransactions"].as_u64().unwrap_or(0);
-        let slot = rps_result["slot"].as_u64().unwrap_or(0);
-        let total_tx = num_tx / 60;
-
-        Ok((slot, total_tx))
+                let num_tx = rps_result["numTransactions"].as_u64().unwrap_or(0);
+                let slot = rps_result["slot"].as_u64().unwrap_or(0);
+                let total_tx = num_tx / 60;
+                Ok((slot, total_tx))
+            }
+            Err(e) => {
+                println!("Error occurred: {}", e);
+                Ok((0, 0))
+            }
+        }
     }
 
     pub fn get_solana_price(&mut self) -> Result<f64, Box<dyn Error>> {
         let headers = [("accept", "application/json")];
         let url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
-        let result = self.http_request(Method::Get, &url, &headers, None)?;
-        let sol_price = result["solana"]["usd"].as_f64().unwrap_or(0.0);
-        Ok(sol_price)
+        match self.http_request(Method::Get, &url, &headers, None) {
+            Ok(response) => {
+                let sol_price = response["solana"]["usd"].as_f64().unwrap_or(0.0);
+                Ok(sol_price)
+            }
+            Err(e) => {
+                println!("Error occurred: {}", e);
+                Ok(0.0)
+            }
+        }
     }
 }
