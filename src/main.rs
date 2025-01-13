@@ -13,6 +13,7 @@ use esp_idf_hal::{
     prelude::Peripherals,
     sys::{esp_err_to_name, nvs_flash_init, ESP_OK},
 };
+use esp_idf_svc::sntp::EspSntp;
 use http::Http;
 use wifi::wifi;
 
@@ -37,6 +38,7 @@ fn main() {
 
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
+
     let app_config = CONFIG;
 
     let init_result = unsafe { nvs_flash_init() };
@@ -92,7 +94,6 @@ fn main() {
     );
 
     let mut http = Http::init(&app_config.sol_rpc).expect("Http module initialization failed");
-
     display_module.create_black_rectangle();
 
     let device_ready = "Device Ready";
@@ -101,17 +102,23 @@ fn main() {
 
     display_module.create_centered_text(&device_ready, FONT_6X10);
 
+    let _sntp = EspSntp::new_default().unwrap();
+
+    std::thread::sleep(Duration::from_millis(3000));
+    let utc_offset_time = http.utc_offset_time().unwrap_or(0);
+
     led_1.set_low().unwrap();
     let mut previous_state = true;
     loop {
         let show_data = is_on.load(Ordering::SeqCst);
         if show_data {
+            led_2.set_high().unwrap();
             display_module.create_black_rectangle();
             if !previous_state {
                 previous_state = true;
             }
             led_3.set_low().unwrap();
-            display_module.perpetual_data(&mut http);
+            display_module.perpetual_data(&mut http, utc_offset_time);
         } else if !show_data && previous_state {
             display_module.create_black_rectangle();
             println!("Device Off");
