@@ -75,3 +75,9 @@ cargo run --release
 
 ## **Enjoy!**
 Now your cool mini display will show you **real-time Solana data**!  
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://twitter.com/lich01_" target="_blank">@lich.sol</a>
+</p>
