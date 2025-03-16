@@ -29,6 +29,8 @@ pub struct Config {
     wifi_psk: &'static str,
     #[default("")]
     sol_rpc: &'static str,
+    #[default("")]
+    wallet_address: &'static str,
 }
 
 fn main() {
@@ -62,7 +64,7 @@ fn main() {
 
     let is_on = Arc::new(AtomicBool::new(true));
     let is_on_clone = Arc::clone(&is_on);
-    let mut display_module = DisplayModule::init(i2c, sda, scl);
+    let mut display_module = DisplayModule::init(i2c, sda, scl, &app_config.wallet_address);
 
     std::thread::spawn(move || loop {
         if button.is_low() {

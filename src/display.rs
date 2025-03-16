@@ -7,7 +7,7 @@ use embedded_graphics::{
     },
     pixelcolor::BinaryColor,
     prelude::{Point, Primitive, Size},
-    primitives::{PrimitiveStyleBuilder, Rectangle},
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text},
     Drawable,
 };
@@ -17,6 +17,7 @@ use esp_idf_hal::{
     units::Hertz,
 };
 use log::info;
+use qrcodegen::{QrCode, QrCodeEcc};
 use ssd1306::{
     mode::{BufferedGraphicsMode, DisplayConfig},
     prelude::{DisplayRotation, I2CInterface},
@@ -33,10 +34,11 @@ pub struct DisplayModule {
         DisplaySize128x64,
         BufferedGraphicsMode<DisplaySize128x64>,
     >,
+    pub wallet_address: String,
 }
 
 impl DisplayModule {
-    pub fn init(i2c: I2C0, sda: Gpio21, scl: Gpio22) -> Self {
+    pub fn init(i2c: I2C0, sda: Gpio21, scl: Gpio22, wallet_address: &str) -> Self {
         let mut i2c =
             I2cDriver::new(i2c, sda, scl, &I2cConfig::new().baudrate(Hertz(400))).unwrap();
 
@@ -69,7 +71,10 @@ impl DisplayModule {
             .into_styled(on)
             .draw(&mut display)
             .unwrap();
-        Self { display }
+        Self {
+            display,
+            wallet_address: wallet_address.to_string(),
+        }
     }
 
     pub fn create_centered_text(&mut self, text: &str, font: MonoFont) {
@@ -124,6 +129,42 @@ impl DisplayModule {
         display.flush().unwrap();
     }
 
+    pub fn draw_qr_code(&mut self) {
+        let display = &mut self.display;
+        let qr = QrCode::encode_text(&self.wallet_address, QrCodeEcc::Low).unwrap();
+        let qr_size = qr.size();
+
+        let max_width = 128;
+        let max_height = 64;
+        let padding_y = 6;
+
+        let available_height = max_height - (padding_y * 2);
+        let scale = 2;
+
+        // scale the QR to be able to scan it
+        let qr_width = qr_size * scale;
+        let qr_height = qr_size * scale;
+
+        let offset_x = (max_width - qr_width) / 2;
+        let offset_y = ((available_height - qr_height) / 2) + padding_y;
+
+        for y in 0..qr_size {
+            for x in 0..qr_size {
+                if qr.get_module(x, y) {
+                    // this condition determines whether we need to draw a pixel or not.
+                    Rectangle::new(
+                        Point::new(offset_x + x * scale, offset_y + y * scale),
+                        Size::new(scale as u32, scale as u32),
+                    )
+                    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+                    .draw(display)
+                    .unwrap();
+                }
+            }
+        }
+        display.flush().unwrap(); // write the data
+    }
+
     pub fn draw_time(&mut self, offset: i64) {
         let x = 5;
         let y = 64 - 9;
@@ -144,9 +185,7 @@ impl DisplayModule {
         let label_x_c = (max_width_size - label.len() * 6) / 2;
         let label_y_c = 16;
 
-        let wallet_balance = http
-            .get_balance("5KgfWjGePnbFgDAuCqxB5oymuFxQskvCtrw6eYfDa7fj")
-            .unwrap_or(0);
+        let wallet_balance = http.get_balance(&self.wallet_address).unwrap_or(0);
         let readable_result = wallet_balance as f32 / LAMPORTS_PER_SOL as f32;
 
         let formatted = format!("{:.2}", readable_result);
@@ -228,5 +267,14 @@ impl DisplayModule {
             FONT_6X10,
         );
         self.draw_time(offset);
+
+        std::thread::sleep(Duration::from_secs(3));
+
+        self.create_black_rectangle();
+
+        // draw the QR code
+        self.draw_qr_code();
+
+        std::thread::sleep(Duration::from_secs(6));
     }
 }
