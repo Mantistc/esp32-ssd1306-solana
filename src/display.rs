@@ -196,7 +196,7 @@ impl DisplayModule {
         self.create_text(&formatted, value_x_c as u8, value_x_y, FONT_6X10);
         self.draw_time(offset);
 
-        std::thread::sleep(Duration::from_millis(3000));
+        std::thread::sleep(Duration::from_millis(1500));
 
         let (slot, tps) = http.get_tps().unwrap_or_default();
 
@@ -240,7 +240,7 @@ impl DisplayModule {
         );
         self.draw_time(offset);
 
-        std::thread::sleep(Duration::from_millis(3000));
+        std::thread::sleep(Duration::from_millis(1500));
 
         let sol_price_label = "Sol USD Price:";
         let sol_price_label_x_c = (max_width_size - sol_price_label.len() * 6) / 2;
@@ -268,7 +268,7 @@ impl DisplayModule {
         );
         self.draw_time(offset);
 
-        std::thread::sleep(Duration::from_secs(3));
+        std::thread::sleep(Duration::from_millis(1500));
 
         self.create_black_rectangle();
 
