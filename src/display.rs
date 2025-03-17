@@ -149,8 +149,8 @@ impl DisplayModule {
 
         for y in 0..qr_size {
             for x in 0..qr_size {
+                // this condition determines whether we need to draw a pixel or not.
                 if qr.get_module(x, y) {
-                    // this condition determines whether we need to draw a pixel or not.
                     Rectangle::new(
                         Point::new(offset_x + x * scale, offset_y + y * scale),
                         Size::new(scale as u32, scale as u32),
