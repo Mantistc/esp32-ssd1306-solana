@@ -107,7 +107,6 @@ fn main() {
     let _sntp = EspSntp::new_default().unwrap();
 
     std::thread::sleep(Duration::from_millis(3000));
-    let utc_offset_time = http.utc_offset_time().unwrap_or(0);
 
     led_1.set_low().unwrap();
     let mut previous_state = true;
@@ -120,7 +119,7 @@ fn main() {
                 previous_state = true;
             }
             led_3.set_low().unwrap();
-            display_module.perpetual_data(&mut http, utc_offset_time);
+            display_module.perpetual_data(&mut http);
         } else if !show_data && previous_state {
             display_module.create_black_rectangle();
             println!("Device Off");

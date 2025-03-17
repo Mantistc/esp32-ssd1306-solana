@@ -146,17 +146,25 @@ impl Http {
         }
     }
 
-    pub fn utc_offset_time(&mut self) -> Result<i64, Box<dyn std::error::Error>> {
+    pub fn utc_offset_time(&mut self) -> Result<(String, String), Box<dyn std::error::Error>> {
         let headers = [("accept", "application/json")];
         let url = "https://timeapi.io/api/time/current/zone?timeZone=America/Bogota";
         match self.http_request(Method::Get, &url, &headers, None) {
             Ok(response) => {
-                let hours = response["hour"].as_i64().unwrap_or(0);
-                Ok(hours)
+                let year = response["year"].as_i64().unwrap_or(0);
+                let month = response["month"].as_i64().unwrap_or(0);
+                let day = response["day"].as_i64().unwrap_or(0);
+                let hour = response["hour"].as_i64().unwrap_or(0);
+                let minute = response["minute"].as_i64().unwrap_or(0);
+                let seconds = response["seconds"].as_i64().unwrap_or(0);
+
+                let date_string = format!("{}-{:02}-{:02}", year, month, day);
+                let time_string = format!("{:02}:{:02}:{:02}", hour, minute, seconds);
+                Ok((time_string, date_string))
             }
             Err(e) => {
                 println!("Error occurred: {}", e);
-                Ok(0)
+                Ok((String::new(), String::new()))
             }
         }
     }

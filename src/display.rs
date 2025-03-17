@@ -1,4 +1,3 @@
-use chrono::{Local, Timelike};
 use embedded_graphics::{
     image::{Image, ImageRaw},
     mono_font::{
@@ -165,21 +164,18 @@ impl DisplayModule {
         display.flush().unwrap(); // write the data
     }
 
-    pub fn draw_time(&mut self, offset: i64) {
+    pub fn draw_time(&mut self, data: (&str, &str)) {
         let x = 5;
         let y = 64 - 9;
-        let now = Local::now();
-        let difference = now.hour().checked_sub(offset as u32).unwrap_or(0) * 60 * 60;
-        let local_now = now - chrono::Duration::seconds(difference as i64);
-        let time = local_now.format("%H:%M:%S").to_string();
-        let date = local_now.format("%Y-%m-%d").to_string();
+        let (time, date) = data;
         self.create_text(&date, x as u8, y, FONT_4X6);
         let x_time = 128 - (time.len() * 4) - 5;
         self.create_text(&time, x_time as u8, y, FONT_4X6);
     }
 
-    pub fn perpetual_data(&mut self, http: &mut Http, offset: i64) {
+    pub fn perpetual_data(&mut self, http: &mut Http) {
         self.create_black_rectangle();
+        let (time, date) = http.utc_offset_time().unwrap_or_default();
         let max_width_size = 128;
         let label = "Sol Balance:";
         let label_x_c = (max_width_size - label.len() * 6) / 2;
@@ -194,7 +190,7 @@ impl DisplayModule {
 
         self.create_text(&label, label_x_c as u8, label_y_c, FONT_6X10);
         self.create_text(&formatted, value_x_c as u8, value_x_y, FONT_6X10);
-        self.draw_time(offset);
+        self.draw_time((&time, &date));
 
         std::thread::sleep(Duration::from_millis(1500));
 
@@ -228,7 +224,7 @@ impl DisplayModule {
             slot_value_y_c,
             FONT_6X10,
         );
-        self.draw_time(offset);
+        self.draw_time((&time, &date));
 
         // tps
         self.create_text(&tps_label, tps_label_x_c as u8, tps_label_y_c, FONT_4X6);
@@ -238,7 +234,7 @@ impl DisplayModule {
             tps_value_y_c,
             FONT_6X10,
         );
-        self.draw_time(offset);
+        self.draw_time((&time, &date));
 
         std::thread::sleep(Duration::from_millis(1500));
 
@@ -266,7 +262,7 @@ impl DisplayModule {
             sol_price_x_y,
             FONT_6X10,
         );
-        self.draw_time(offset);
+        self.draw_time((&time, &date));
 
         std::thread::sleep(Duration::from_millis(1500));
 
