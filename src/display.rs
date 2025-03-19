@@ -50,7 +50,6 @@ pub struct DisplayValues {
     pub sol_price: f64,
     pub tps_values: (u64, u64),
     pub date_values: (String, String),
-    pub loading: bool,
 }
 
 impl Default for DisplayValues {
@@ -60,7 +59,6 @@ impl Default for DisplayValues {
             sol_price: 0.0,
             tps_values: (0, 0),
             date_values: (String::new(), String::new()),
-            loading: true,
         }
     }
 }
@@ -153,10 +151,10 @@ impl DisplayModule {
             .fill_color(BinaryColor::Off)
             .build();
 
-        let height = 9;
+        let height = 6;
         let x = 5;
-        let width = 127 - x;
-        let y = 63 - height;
+        let width = 128 - (x * 2);
+        let y = 55;
         Rectangle::new(Point::new(x, y), Size::new(width as u32, height as u32))
             .into_styled(on)
             .draw(display)

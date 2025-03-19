@@ -12,7 +12,6 @@ use esp_idf_hal::{
 };
 use esp_idf_svc::sntp::EspSntp;
 use http::Http;
-use log::info;
 use wifi::wifi;
 
 mod display;
@@ -123,7 +122,6 @@ fn main() {
         balance: 1,
         sol_price: 1f64,
         date_values: ("..".to_string(), "..".to_string()),
-        loading: false,
     };
     let mut prev_section = DisplaySection::ScreenOff;
 
@@ -132,25 +130,6 @@ fn main() {
     std::thread::spawn(move || loop {
         let values = display_values_clone.lock().unwrap();
         let mut display = display_clone1.lock().unwrap();
-
-        if values.loading && values.loading != prev_values.loading {
-            display.create_centered_text("Loading...", FONT_6X10);
-            prev_values.loading = values.loading;
-            info!(
-                "loading 1... {}, prev: {}",
-                values.loading, prev_values.loading
-            );
-            drop(values);
-            continue;
-        }
-
-        if values.loading {
-            info!("loading... {}", values.loading);
-            drop(values);
-            std::thread::sleep(Duration::from_secs(3));
-            continue;
-        }
-
         let section = display_section_clone.lock().unwrap();
 
         if let DisplaySection::Balance = *section {
@@ -247,21 +226,26 @@ fn main() {
     });
 
     loop {
-        let time = http.get_time().unwrap();
-        let balance_value = http.get_balance(&app_config.wallet_address).unwrap_or(0);
-        let tps_values = http.get_tps().unwrap();
-        let sol_price = http.get_solana_price().unwrap();
-
-        std::thread::sleep(Duration::from_millis(5000));
-        {
+        if let Ok(balance_value) = http.get_balance(&app_config.wallet_address) {
             let mut display_values = display_values.lock().unwrap();
-            if display_values.loading {
-                display_values.loading = false;
-            }
-            display_values.date_values = time;
             display_values.balance = balance_value;
+        }
+
+        if let Ok(time) = http.get_time() {
+            let mut display_values = display_values.lock().unwrap();
+            display_values.date_values = time;
+        }
+
+        if let Ok(tps_values) = http.get_tps() {
+            let mut display_values = display_values.lock().unwrap();
             display_values.tps_values = tps_values;
+        }
+
+        if let Ok(sol_price) = http.get_solana_price() {
+            let mut display_values = display_values.lock().unwrap();
             display_values.sol_price = sol_price;
         }
+
+        std::thread::sleep(Duration::from_millis(5000));
     }
 }
