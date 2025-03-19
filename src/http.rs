@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 use std::{
     error::Error,
-    sync::{Arc, Mutex},
+    sync::{mpsc, Arc, Mutex},
     time::Duration,
 };
 
@@ -16,7 +16,7 @@ pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
 
 pub struct Http {
     sol_endpoint: String,
-    http_client: Arc<Mutex<Client<EspHttpConnection>>>,
+    http_client: Client<EspHttpConnection>,
 }
 
 unsafe impl Send for Http {}
@@ -32,7 +32,7 @@ impl Http {
         let client = Client::wrap(connection);
         Ok(Self {
             sol_endpoint: endpoint.to_string(),
-            http_client: Arc::new(Mutex::new(client)),
+            http_client: client,
         })
     }
 
@@ -43,7 +43,7 @@ impl Http {
         headers: &[(&str, &str)],
         payload: Option<&str>,
     ) -> Result<serde_json::Value, Box<dyn Error>> {
-        let client = &mut self.http_client.lock().unwrap();
+        let client = &mut self.http_client;
         let mut request = client.request(method, uri, &headers)?;
         if let Some(payload_str) = payload {
             request.write(payload_str.as_bytes())?;

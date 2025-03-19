@@ -134,20 +134,25 @@ fn main() {
 
     let display_clone1 = Arc::clone(&display_module);
     let is_on_clone1 = Arc::clone(&is_on);
-    let http = Arc::new(Mutex::new(
-        Http::init(&app_config.sol_rpc).expect("Http module initialization failed"),
-    ));
-    let http_clone = Arc::clone(&http);
+    let mut http = Http::init(&app_config.sol_rpc).expect("Http module initialization failed");
 
-    std::thread::spawn(move || loop {
-        let mut http = http_clone.lock().unwrap();
-        let mut display = display_clone1.lock().unwrap();
-        let show_data = is_on_clone1.load(Ordering::SeqCst);
-        if show_data {
-            led_2.set_high().unwrap();
-            display.show_balance();
-        } else {
-            led_2.set_low().unwrap();
+    let balance = Arc::new(Mutex::new(0u64));
+    let balance_clone_1 = Arc::clone(&balance);
+    std::thread::spawn(move || {
+        const LOOP_DELAY: Duration = Duration::from_millis(150);
+        let mut prev_value = 0u64;
+        loop {
+            let show_data = is_on_clone1.load(Ordering::SeqCst);
+            let balance_value = *balance_clone_1.lock().unwrap();
+            if show_data && prev_value != balance_value {
+                led_2.set_high().unwrap();
+                let mut display = display_clone1.lock().unwrap();
+                prev_value = balance_value;
+                display.show_balance(balance_value);
+            } else {
+                led_2.set_low().unwrap();
+            }
+            std::thread::sleep(LOOP_DELAY);
         }
     });
 
@@ -208,6 +213,9 @@ fn main() {
     });
 
     loop {
-        std::thread::sleep(Duration::from_millis(500));
+        let balance_value = http.get_balance(&app_config.wallet_address).unwrap_or(0);
+        let (slot, tps) = http.get_tps().unwrap();
+        *balance.lock().unwrap() = balance_value;
+        std::thread::sleep(Duration::from_millis(5000));
     }
 }
