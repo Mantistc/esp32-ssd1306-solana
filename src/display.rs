@@ -37,6 +37,14 @@ pub struct DisplayModule {
 }
 pub const MAX_WIDTH_SIZE: usize = 128;
 
+pub enum DisplaySection{
+    Balance,
+    Tps,
+    SolPrice,
+    QrCode,
+    ScreenOff
+}
+
 impl DisplayModule {
     pub fn init(i2c: I2C0, sda: Gpio21, scl: Gpio22, wallet_address: &str) -> Self {
         let mut i2c =
@@ -191,12 +199,11 @@ impl DisplayModule {
 
         self.create_text(&label, label_x_c as u8, label_y_c, FONT_6X10);
         self.create_text(&formatted, value_x_c as u8, value_x_y, FONT_6X10);
-        std::thread::sleep(Duration::from_millis(1500));
     }
 
-    pub fn show_tps(&mut self, http: &mut Http) {
+    pub fn show_tps(&mut self, values: (u64,u64)) {
         self.create_black_rectangle();
-        let (slot, tps) = http.get_tps().unwrap_or_default();
+        let (slot, tps) = values;
         let height_constant = 6 + 5;
         let font_width_4x = 4;
         let font_width_6x = 6;
@@ -231,15 +238,13 @@ impl DisplayModule {
             tps_value_y_c,
             FONT_6X10,
         );
-        std::thread::sleep(Duration::from_millis(1500));
     }
 
-    pub fn show_sol_usd_price(&mut self, http: &mut Http) {
+    pub fn show_sol_usd_price(&mut self, sol_price: f64) {
         self.create_black_rectangle();
         let sol_price_label = "Sol USD Price:";
         let sol_price_label_x_c = (MAX_WIDTH_SIZE - sol_price_label.len() * 6) / 2;
         let sol_price_label_y_c = 16;
-        let sol_price = http.get_solana_price().unwrap_or_default();
         let sol_price_formatted = format!("{:.2}", sol_price);
         let sol_price_x_c = (MAX_WIDTH_SIZE - sol_price_formatted.len() * 6) / 2;
         let sol_price_x_y = 33;
@@ -256,7 +261,5 @@ impl DisplayModule {
             sol_price_x_y,
             FONT_6X10,
         );
-
-        std::thread::sleep(Duration::from_millis(1500));
     }
 }

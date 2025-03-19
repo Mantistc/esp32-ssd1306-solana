@@ -6,11 +6,7 @@ use esp_idf_svc::http::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::{
-    error::Error,
-    sync::{mpsc, Arc, Mutex},
-    time::Duration,
-};
+use std::{error::Error, time::Duration};
 
 pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
 
@@ -18,8 +14,6 @@ pub struct Http {
     sol_endpoint: String,
     http_client: Client<EspHttpConnection>,
 }
-
-unsafe impl Send for Http {}
 
 impl Http {
     pub fn init(endpoint: &str) -> Result<Self, Box<dyn Error>> {
@@ -97,25 +91,8 @@ impl Http {
             ("Content-Length", &payload_str.len().to_string()),
         ];
         let endpoint = self.sol_endpoint.clone();
-        let max_retries = 3;
-        let mut attempts = 0;
-
-        while attempts < max_retries {
-            match self.http_request(Method::Post, &endpoint, &headers, Some(&payload_str)) {
-                Ok(value) => return Ok(value["result"].clone()),
-                Err(e) => {
-                    attempts += 1;
-                    println!("attempt {}/{} failed: {}", attempts, max_retries, e);
-                    if attempts < max_retries {
-                        std::thread::sleep(Duration::from_millis(1500));
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err("Unexpected failure after retries".into())
+        let result = self.http_request(Method::Post, &endpoint, &headers, Some(&payload_str))?;
+        Ok(result["result"].clone())
     }
 
     pub fn get_balance(&mut self, wallet: &str) -> Result<u64, Box<dyn Error>> {

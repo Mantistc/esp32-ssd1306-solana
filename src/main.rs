@@ -1,12 +1,9 @@
 use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use display::DisplayModule;
+use display::{DisplayModule, DisplaySection};
 use embedded_graphics::mono_font::ascii::FONT_6X10;
 use esp_idf_hal::{
     gpio::{PinDriver, Pull},
@@ -74,9 +71,6 @@ fn main() {
     let mut show_wallet_qr_code_btn = PinDriver::input(peripherals.pins.gpio27).unwrap();
     show_wallet_qr_code_btn.set_pull(Pull::Up).unwrap();
 
-    let is_on = Arc::new(AtomicBool::new(true));
-    let is_on_clone = Arc::clone(&is_on);
-
     let display_module = Arc::new(Mutex::new(DisplayModule::init(
         i2c,
         sda,
@@ -84,19 +78,7 @@ fn main() {
         &app_config.wallet_address,
     )));
 
-    std::thread::spawn(move || loop {
-        if off_btn.is_low() {
-            is_on_clone.store(!is_on_clone.load(Ordering::SeqCst), Ordering::SeqCst);
-            println!(
-                "Button toggled. is_on: {}",
-                is_on_clone.load(Ordering::SeqCst)
-            );
-        } else {
-            std::thread::sleep(Duration::from_millis(500)); // pulse btn time
-            continue;
-        }
-        std::thread::sleep(Duration::from_millis(5000)); // min time to change the state (On,Off) again
-    });
+    let display_section = Arc::new(Mutex::new(DisplaySection::Balance));
 
     let solana_cool_app_text = "Connecting wifi...";
 
@@ -117,6 +99,7 @@ fn main() {
     );
 
     let _sntp = EspSntp::new_default().unwrap();
+    let mut http = Http::init(&app_config.sol_rpc).expect("Http module initialization failed");
 
     let device_ready = "Device Ready";
 
@@ -133,47 +116,53 @@ fn main() {
     // control all separately with the buttons
 
     let display_clone1 = Arc::clone(&display_module);
-    let is_on_clone1 = Arc::clone(&is_on);
-    let mut http = Http::init(&app_config.sol_rpc).expect("Http module initialization failed");
 
     let balance = Arc::new(Mutex::new(0u64));
     let balance_clone_1 = Arc::clone(&balance);
+    let _display_section_clone = Arc::clone(&display_section);
+    let mut prev_value = 1u64;
+
     std::thread::spawn(move || {
         const LOOP_DELAY: Duration = Duration::from_millis(150);
-        let mut prev_value = 0u64;
         loop {
-            let show_data = is_on_clone1.load(Ordering::SeqCst);
-            let balance_value = *balance_clone_1.lock().unwrap();
-            if show_data && prev_value != balance_value {
-                led_2.set_high().unwrap();
-                let mut display = display_clone1.lock().unwrap();
-                prev_value = balance_value;
-                display.show_balance(balance_value);
-            } else {
-                led_2.set_low().unwrap();
+            led_2.set_high().unwrap();
+            match *_display_section_clone.lock().unwrap() {
+                DisplaySection::Balance => {
+                    let mut display = display_clone1.lock().unwrap();
+                    let balance_value = *balance_clone_1.lock().unwrap();
+                    if prev_value != balance_value {
+                        display.show_balance(balance_value);
+                        prev_value = balance_value;
+                    }
+                }
+                DisplaySection::Tps => {
+                    let mut display = display_clone1.lock().unwrap();
+                    display.show_tps((1, 1));
+                }
+                DisplaySection::SolPrice => {
+                    let mut display = display_clone1.lock().unwrap();
+                    display.show_sol_usd_price(15f64);
+                }
+                DisplaySection::QrCode => {
+                    let mut display = display_clone1.lock().unwrap();
+                    display.draw_qr_code();
+                }
+                DisplaySection::ScreenOff => {
+                    led_2.set_low().unwrap();
+                    let mut display = display_clone1.lock().unwrap();
+                    display.draw_image();
+                    led_3.set_high().unwrap();
+                }
             }
+            led_3.set_low().unwrap();
             std::thread::sleep(LOOP_DELAY);
         }
     });
 
-    let is_on_clone2 = Arc::clone(&is_on);
-    let display_clone2 = Arc::clone(&display_module);
-
-    std::thread::spawn(move || loop {
-        let show_data = is_on_clone2.load(Ordering::SeqCst);
-        let mut display = display_clone2.lock().unwrap();
-        if !show_data {
-            println!("Device Off");
-            display.draw_image();
-            led_3.set_high().unwrap();
-            std::thread::sleep(Duration::from_millis(50));
-        } else {
-            led_3.set_low().unwrap();
-        }
-    });
-
+    let display_section_balance = Arc::clone(&display_section);
     std::thread::spawn(move || loop {
         if show_balance_btn.is_low() {
+            *display_section_balance.lock().unwrap() = DisplaySection::Balance;
             println!("balance btn pressed",);
         } else {
             std::thread::sleep(Duration::from_millis(500));
@@ -182,8 +171,10 @@ fn main() {
         std::thread::sleep(Duration::from_millis(5000));
     });
 
+    let display_section_price = Arc::clone(&display_section);
     std::thread::spawn(move || loop {
         if show_solana_price_btn.is_low() {
+            *display_section_price.lock().unwrap() = DisplaySection::SolPrice;
             println!("solana price btn pressed",);
         } else {
             std::thread::sleep(Duration::from_millis(500));
@@ -192,8 +183,10 @@ fn main() {
         std::thread::sleep(Duration::from_millis(5000));
     });
 
+    let display_section_tps = Arc::clone(&display_section);
     std::thread::spawn(move || loop {
         if show_tps_btn.is_low() {
+            *display_section_tps.lock().unwrap() = DisplaySection::Tps;
             println!("show tps btn pressed",);
         } else {
             std::thread::sleep(Duration::from_millis(500));
@@ -202,14 +195,30 @@ fn main() {
         std::thread::sleep(Duration::from_millis(5000));
     });
 
+    let display_section_qr_code = Arc::clone(&display_section);
     std::thread::spawn(move || loop {
         if show_wallet_qr_code_btn.is_low() {
+            *display_section_qr_code.lock().unwrap() = DisplaySection::QrCode;
             println!("qr code btn pressed",);
         } else {
             std::thread::sleep(Duration::from_millis(500));
             continue;
         }
         std::thread::sleep(Duration::from_millis(5000));
+    });
+
+    let display_section_off = Arc::clone(&display_section);
+    std::thread::spawn(move || {
+        loop {
+            if off_btn.is_low() {
+                *display_section_off.lock().unwrap() = DisplaySection::ScreenOff;
+                println!("off btn pressed",);
+            } else {
+                std::thread::sleep(Duration::from_millis(500)); // pulse btn time
+                continue;
+            }
+            std::thread::sleep(Duration::from_millis(5000)); // min time to change the state (On,Off) again
+        }
     });
 
     loop {
