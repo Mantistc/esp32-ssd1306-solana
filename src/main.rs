@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use display::{DisplayModule, DisplaySection};
+use display::{DisplayModule, DisplaySection, DisplayValues};
 use embedded_graphics::mono_font::ascii::FONT_6X10;
 use esp_idf_hal::{
     gpio::{PinDriver, Pull},
@@ -78,8 +78,6 @@ fn main() {
         &app_config.wallet_address,
     )));
 
-    let display_section = Arc::new(Mutex::new(DisplaySection::Balance));
-
     let solana_cool_app_text = "Connecting wifi...";
 
     {
@@ -114,117 +112,121 @@ fn main() {
 
     // After device is ready, we're going to create multiple threads to
     // control all separately with the buttons
-
     let display_clone1 = Arc::clone(&display_module);
 
-    let balance = Arc::new(Mutex::new(0u64));
-    let balance_clone_1 = Arc::clone(&balance);
-    let _display_section_clone = Arc::clone(&display_section);
-    let mut prev_value = 1u64;
+    let display_values = Arc::new(Mutex::new(DisplayValues::default()));
+    let display_values_clone = Arc::clone(&display_values);
+    let display_section = Arc::new(Mutex::new(DisplaySection::Balance));
+    let display_section_clone = Arc::clone(&display_section);
+    let mut prev_values = DisplayValues {
+        tps_values: (1, 1),
+        balance: 1,
+        sol_price: 1f64,
+        date_values: ("...".to_string(), "...".to_string()),
+    };
 
-    std::thread::spawn(move || {
-        const LOOP_DELAY: Duration = Duration::from_millis(150);
-        loop {
-            led_2.set_high().unwrap();
-            match *_display_section_clone.lock().unwrap() {
-                DisplaySection::Balance => {
-                    let mut display = display_clone1.lock().unwrap();
-                    let balance_value = *balance_clone_1.lock().unwrap();
-                    if prev_value != balance_value {
-                        display.show_balance(balance_value);
-                        prev_value = balance_value;
-                    }
-                }
-                DisplaySection::Tps => {
-                    let mut display = display_clone1.lock().unwrap();
-                    display.show_tps((1, 1));
-                }
-                DisplaySection::SolPrice => {
-                    let mut display = display_clone1.lock().unwrap();
-                    display.show_sol_usd_price(15f64);
-                }
-                DisplaySection::QrCode => {
-                    let mut display = display_clone1.lock().unwrap();
-                    display.draw_qr_code();
-                }
-                DisplaySection::ScreenOff => {
-                    led_2.set_low().unwrap();
-                    let mut display = display_clone1.lock().unwrap();
-                    display.draw_image();
-                    led_3.set_high().unwrap();
-                }
+    const LOOP_DELAY: Duration = Duration::from_millis(150);
+
+    std::thread::spawn(move || loop {
+        let section = display_section_clone.lock().unwrap();
+        let values = display_values_clone.lock().unwrap();
+        let mut display = display_clone1.lock().unwrap();
+
+        if let DisplaySection::Balance = *section {
+            if prev_values.balance != values.balance {
+                display.show_balance(values.balance);
+                prev_values.balance = values.balance;
             }
-            led_3.set_low().unwrap();
-            std::thread::sleep(LOOP_DELAY);
-        }
-    });
-
-    let display_section_balance = Arc::clone(&display_section);
-    std::thread::spawn(move || loop {
-        if show_balance_btn.is_low() {
-            *display_section_balance.lock().unwrap() = DisplaySection::Balance;
-            println!("balance btn pressed",);
         } else {
-            std::thread::sleep(Duration::from_millis(500));
-            continue;
+            prev_values.balance = u64::MAX;
         }
-        std::thread::sleep(Duration::from_millis(5000));
-    });
 
-    let display_section_price = Arc::clone(&display_section);
-    std::thread::spawn(move || loop {
-        if show_solana_price_btn.is_low() {
-            *display_section_price.lock().unwrap() = DisplaySection::SolPrice;
-            println!("solana price btn pressed",);
-        } else {
-            std::thread::sleep(Duration::from_millis(500));
-            continue;
-        }
-        std::thread::sleep(Duration::from_millis(5000));
-    });
-
-    let display_section_tps = Arc::clone(&display_section);
-    std::thread::spawn(move || loop {
-        if show_tps_btn.is_low() {
-            *display_section_tps.lock().unwrap() = DisplaySection::Tps;
-            println!("show tps btn pressed",);
-        } else {
-            std::thread::sleep(Duration::from_millis(500));
-            continue;
-        }
-        std::thread::sleep(Duration::from_millis(5000));
-    });
-
-    let display_section_qr_code = Arc::clone(&display_section);
-    std::thread::spawn(move || loop {
-        if show_wallet_qr_code_btn.is_low() {
-            *display_section_qr_code.lock().unwrap() = DisplaySection::QrCode;
-            println!("qr code btn pressed",);
-        } else {
-            std::thread::sleep(Duration::from_millis(500));
-            continue;
-        }
-        std::thread::sleep(Duration::from_millis(5000));
-    });
-
-    let display_section_off = Arc::clone(&display_section);
-    std::thread::spawn(move || {
-        loop {
-            if off_btn.is_low() {
-                *display_section_off.lock().unwrap() = DisplaySection::ScreenOff;
-                println!("off btn pressed",);
-            } else {
-                std::thread::sleep(Duration::from_millis(500)); // pulse btn time
-                continue;
+        if let DisplaySection::Tps = *section {
+            if values.tps_values.0 != prev_values.tps_values.0
+                || values.tps_values.1 != prev_values.tps_values.1
+            {
+                display.show_tps(values.tps_values);
+                prev_values.tps_values = values.tps_values;
             }
-            std::thread::sleep(Duration::from_millis(5000)); // min time to change the state (On,Off) again
+        } else {
+            prev_values.tps_values = (0, 0);
+        }
+
+        if let DisplaySection::SolPrice = *section {
+            if values.sol_price != prev_values.sol_price {
+                display.show_sol_usd_price(values.sol_price);
+                prev_values.sol_price = values.sol_price;
+            }
+        } else {
+            prev_values.sol_price = 0.0;
+        }
+
+        match *section {
+            DisplaySection::Tps | DisplaySection::SolPrice | DisplaySection::Balance => {
+                led_2.set_high().unwrap();
+                led_3.set_low().unwrap();
+            }
+            DisplaySection::QrCode => {
+                display.draw_qr_code();
+            }
+            DisplaySection::ScreenOff => {
+                led_2.set_low().unwrap();
+                display.draw_image();
+                led_3.set_high().unwrap();
+            }
+        }
+
+        if prev_values.date_values != values.date_values
+            && *section != DisplaySection::QrCode
+            && *section != DisplaySection::ScreenOff
+        {
+            let (date, time) = &values.date_values;
+            display.draw_time((&date, &time))
+        };
+
+        drop(values);
+        std::thread::sleep(LOOP_DELAY);
+    });
+
+    let display_section_btns = Arc::clone(&display_section);
+    std::thread::spawn(move || loop {
+        let new_section = if show_balance_btn.is_low() {
+            println!("balance btn pressed");
+            Some(DisplaySection::Balance)
+        } else if show_solana_price_btn.is_low() {
+            println!("show_solana_price_btn pressed");
+            Some(DisplaySection::SolPrice)
+        } else if show_wallet_qr_code_btn.is_low() {
+            println!("show_wallet_qr_code_btn pressed");
+            Some(DisplaySection::QrCode)
+        } else if show_tps_btn.is_low() {
+            println!("show_tps_btn pressed");
+            Some(DisplaySection::Tps)
+        } else if off_btn.is_low() {
+            println!("off_btn pressed");
+            Some(DisplaySection::ScreenOff)
+        } else {
+            std::thread::sleep(Duration::from_millis(500));
+            None
+        };
+        if let Some(section) = new_section {
+            *display_section_btns.lock().unwrap() = section;
+            std::thread::sleep(Duration::from_millis(1500));
         }
     });
 
     loop {
+        let time = http.get_time().unwrap();
         let balance_value = http.get_balance(&app_config.wallet_address).unwrap_or(0);
-        let (slot, tps) = http.get_tps().unwrap();
-        *balance.lock().unwrap() = balance_value;
+        let tps_values = http.get_tps().unwrap();
+        let sol_price = http.get_solana_price().unwrap();
         std::thread::sleep(Duration::from_millis(5000));
+        {
+            let mut display_values = display_values.lock().unwrap();
+            display_values.date_values = time;
+            display_values.balance = balance_value;
+            display_values.tps_values = tps_values;
+            display_values.sol_price = sol_price;
+        }
     }
 }

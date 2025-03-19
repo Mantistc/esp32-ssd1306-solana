@@ -23,9 +23,8 @@ use ssd1306::{
     size::DisplaySize128x64,
     I2CDisplayInterface, Ssd1306,
 };
-use std::time::Duration;
 
-use crate::http::{Http, LAMPORTS_PER_SOL};
+use crate::http::LAMPORTS_PER_SOL;
 
 pub struct DisplayModule {
     pub display: Ssd1306<
@@ -37,12 +36,31 @@ pub struct DisplayModule {
 }
 pub const MAX_WIDTH_SIZE: usize = 128;
 
-pub enum DisplaySection{
+#[derive(PartialEq, Eq)]
+pub enum DisplaySection {
     Balance,
     Tps,
     SolPrice,
     QrCode,
-    ScreenOff
+    ScreenOff,
+}
+
+pub struct DisplayValues {
+    pub balance: u64,
+    pub sol_price: f64,
+    pub tps_values: (u64, u64),
+    pub date_values: (String, String),
+}
+
+impl Default for DisplayValues {
+    fn default() -> Self {
+        Self {
+            balance: Default::default(),
+            sol_price: Default::default(),
+            tps_values: Default::default(),
+            date_values: Default::default(),
+        }
+    }
 }
 
 impl DisplayModule {
@@ -175,9 +193,8 @@ impl DisplayModule {
         display.flush().unwrap(); // write the data
     }
 
-    pub fn draw_time(&mut self, http: &mut Http) {
-        self.create_black_rectangle();
-        let (time, date) = http.utc_offset_time().unwrap_or_default();
+    pub fn draw_time(&mut self, date_values: (&str, &str)) {
+        let (time, date) = date_values;
         let x = 5;
         let y = 64 - 9;
         self.create_text(&date, x as u8, y, FONT_4X6);
@@ -201,7 +218,7 @@ impl DisplayModule {
         self.create_text(&formatted, value_x_c as u8, value_x_y, FONT_6X10);
     }
 
-    pub fn show_tps(&mut self, values: (u64,u64)) {
+    pub fn show_tps(&mut self, values: (u64, u64)) {
         self.create_black_rectangle();
         let (slot, tps) = values;
         let height_constant = 6 + 5;

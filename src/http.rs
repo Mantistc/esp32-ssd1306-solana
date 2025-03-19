@@ -6,7 +6,7 @@ use esp_idf_svc::http::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::{error::Error, time::Duration};
+use std::error::Error;
 
 pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
 
@@ -146,42 +146,25 @@ impl Http {
         }
     }
 
-    pub fn utc_offset_time(&mut self) -> Result<(String, String), Box<dyn std::error::Error>> {
+    pub fn get_time(&mut self) -> Result<(String, String), Box<dyn std::error::Error>> {
         let headers = [("accept", "application/json")];
         let url = "https://timeapi.io/api/time/current/zone?timeZone=America/Bogota";
 
-        let max_retries = 3;
-        let mut attempts = 0;
+        match self.http_request(Method::Get, &url, &headers, None) {
+            Ok(response) => {
+                let year = response["year"].as_i64().unwrap_or(0);
+                let month = response["month"].as_i64().unwrap_or(0);
+                let day = response["day"].as_i64().unwrap_or(0);
+                let hour = response["hour"].as_i64().unwrap_or(0);
+                let minute = response["minute"].as_i64().unwrap_or(0);
+                let seconds = response["seconds"].as_i64().unwrap_or(0);
 
-        while attempts < max_retries {
-            match self.http_request(Method::Get, &url, &headers, None) {
-                Ok(response) => {
-                    let year = response["year"].as_i64().unwrap_or(0);
-                    let month = response["month"].as_i64().unwrap_or(0);
-                    let day = response["day"].as_i64().unwrap_or(0);
-                    let hour = response["hour"].as_i64().unwrap_or(0);
-                    let minute = response["minute"].as_i64().unwrap_or(0);
-                    let seconds = response["seconds"].as_i64().unwrap_or(0);
+                let date_string = format!("{}-{:02}-{:02}", year, month, day);
+                let time_string = format!("{:02}:{:02}:{:02}", hour, minute, seconds);
 
-                    let date_string = format!("{}-{:02}-{:02}", year, month, day);
-                    let time_string = format!("{:02}:{:02}:{:02}", hour, minute, seconds);
-                    return Ok((time_string, date_string));
-                }
-                Err(e) => {
-                    attempts += 1;
-                    println!("Attempt {}/{} failed: {}", attempts, max_retries, e);
-
-                    if attempts < max_retries {
-                        println!("retrying in 1 second...");
-                        std::thread::sleep(Duration::from_millis(1500));
-                    } else {
-                        println!("all attempts failed.");
-                        return Err(e);
-                    }
-                }
+                Ok((time_string, date_string))
             }
+            Err(_) => Ok(("...".to_string(), "...".to_string())),
         }
-
-        Err("Unexpected failure after retries".into())
     }
 }
