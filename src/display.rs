@@ -36,7 +36,7 @@ pub struct DisplayModule {
 }
 pub const MAX_WIDTH_SIZE: usize = 128;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum DisplaySection {
     Balance,
     Tps,
@@ -50,15 +50,17 @@ pub struct DisplayValues {
     pub sol_price: f64,
     pub tps_values: (u64, u64),
     pub date_values: (String, String),
+    pub loading: bool,
 }
 
 impl Default for DisplayValues {
     fn default() -> Self {
         Self {
-            balance: Default::default(),
-            sol_price: Default::default(),
-            tps_values: Default::default(),
-            date_values: Default::default(),
+            balance: 0,
+            sol_price: 0.0,
+            tps_values: (0, 0),
+            date_values: (String::new(), String::new()),
+            loading: true,
         }
     }
 }
@@ -145,6 +147,22 @@ impl DisplayModule {
             .unwrap();
     }
 
+    pub fn create_black_rectangle_on_time(&mut self) {
+        let display = &mut self.display;
+        let on = PrimitiveStyleBuilder::new()
+            .fill_color(BinaryColor::Off)
+            .build();
+
+        let height = 9;
+        let x = 5;
+        let width = 127 - x;
+        let y = 63 - height;
+        Rectangle::new(Point::new(x, y), Size::new(width as u32, height as u32))
+            .into_styled(on)
+            .draw(display)
+            .unwrap();
+    }
+
     pub fn draw_image(&mut self) {
         self.create_black_rectangle();
         let display = &mut self.display;
@@ -197,6 +215,7 @@ impl DisplayModule {
         let (time, date) = date_values;
         let x = 5;
         let y = 64 - 9;
+        self.create_black_rectangle_on_time();
         self.create_text(&date, x as u8, y, FONT_4X6);
         let x_time = 128 - (time.len() * 4) - 5;
         self.create_text(&time, x_time as u8, y, FONT_4X6);

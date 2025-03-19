@@ -12,6 +12,7 @@ use esp_idf_hal::{
 };
 use esp_idf_svc::sntp::EspSntp;
 use http::Http;
+use log::info;
 use wifi::wifi;
 
 mod display;
@@ -83,7 +84,6 @@ fn main() {
     {
         let mut display = display_module.lock().unwrap();
         display.create_centered_text(solana_cool_app_text, FONT_6X10);
-        std::thread::sleep(Duration::from_millis(3000));
         display.create_black_rectangle();
     }
 
@@ -104,7 +104,7 @@ fn main() {
     {
         let mut display = display_module.lock().unwrap();
         display.create_centered_text(device_ready, FONT_6X10);
-        std::thread::sleep(Duration::from_millis(3000));
+        std::thread::sleep(Duration::from_millis(1000));
         display.create_black_rectangle();
     }
 
@@ -122,15 +122,36 @@ fn main() {
         tps_values: (1, 1),
         balance: 1,
         sol_price: 1f64,
-        date_values: ("...".to_string(), "...".to_string()),
+        date_values: ("..".to_string(), "..".to_string()),
+        loading: false,
     };
+    let mut prev_section = DisplaySection::ScreenOff;
 
     const LOOP_DELAY: Duration = Duration::from_millis(150);
 
     std::thread::spawn(move || loop {
-        let section = display_section_clone.lock().unwrap();
         let values = display_values_clone.lock().unwrap();
         let mut display = display_clone1.lock().unwrap();
+
+        if values.loading && values.loading != prev_values.loading {
+            display.create_centered_text("Loading...", FONT_6X10);
+            prev_values.loading = values.loading;
+            info!(
+                "loading 1... {}, prev: {}",
+                values.loading, prev_values.loading
+            );
+            drop(values);
+            continue;
+        }
+
+        if values.loading {
+            info!("loading... {}", values.loading);
+            drop(values);
+            std::thread::sleep(Duration::from_secs(3));
+            continue;
+        }
+
+        let section = display_section_clone.lock().unwrap();
 
         if let DisplaySection::Balance = *section {
             if prev_values.balance != values.balance {
@@ -176,12 +197,22 @@ fn main() {
             }
         }
 
+        let (date, time) = &values.date_values;
+
         if prev_values.date_values != values.date_values
             && *section != DisplaySection::QrCode
             && *section != DisplaySection::ScreenOff
         {
-            let (date, time) = &values.date_values;
-            display.draw_time((&date, &time))
+            display.draw_time((&date, &time));
+            prev_values.date_values = (date.to_string(), time.to_string());
+        };
+
+        if prev_section != *section
+            && *section != DisplaySection::QrCode
+            && *section != DisplaySection::ScreenOff
+        {
+            display.draw_time((&date, &time));
+            prev_section = *section;
         };
 
         drop(values);
@@ -206,7 +237,7 @@ fn main() {
             println!("off_btn pressed");
             Some(DisplaySection::ScreenOff)
         } else {
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(50));
             None
         };
         if let Some(section) = new_section {
@@ -220,9 +251,13 @@ fn main() {
         let balance_value = http.get_balance(&app_config.wallet_address).unwrap_or(0);
         let tps_values = http.get_tps().unwrap();
         let sol_price = http.get_solana_price().unwrap();
+
         std::thread::sleep(Duration::from_millis(5000));
         {
             let mut display_values = display_values.lock().unwrap();
+            if display_values.loading {
+                display_values.loading = false;
+            }
             display_values.date_values = time;
             display_values.balance = balance_value;
             display_values.tps_values = tps_values;
