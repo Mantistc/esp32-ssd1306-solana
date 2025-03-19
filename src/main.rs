@@ -98,7 +98,6 @@ fn main() {
         std::thread::sleep(Duration::from_millis(5000)); // min time to change the state (On,Off) again
     });
 
-
     let solana_cool_app_text = "Connecting wifi...";
 
     {
@@ -130,12 +129,11 @@ fn main() {
 
     led_1.set_low().unwrap();
 
-
-    // After device is ready, we're going to separate into threads
-    // with that, we can control all 
+    // After device is ready, we're going to create multiple threads to
+    // control all separately with the buttons
 
     let display_clone1 = Arc::clone(&display_module);
-    let is_on_clone = Arc::clone(&is_on);
+    let is_on_clone1 = Arc::clone(&is_on);
     let http = Arc::new(Mutex::new(
         Http::init(&app_config.sol_rpc).expect("Http module initialization failed"),
     ));
@@ -144,27 +142,69 @@ fn main() {
     std::thread::spawn(move || loop {
         let mut http = http_clone.lock().unwrap();
         let mut display = display_clone1.lock().unwrap();
-        let show_data = is_on_clone.load(Ordering::SeqCst);
+        let show_data = is_on_clone1.load(Ordering::SeqCst);
         if show_data {
-            display.show_balance(&mut http);
-            std::thread::sleep(Duration::from_millis(50));
+            led_2.set_high().unwrap();
+            display.show_balance();
+        } else {
+            led_2.set_low().unwrap();
         }
     });
 
-    let is_on_clone = Arc::clone(&is_on);
+    let is_on_clone2 = Arc::clone(&is_on);
     let display_clone2 = Arc::clone(&display_module);
 
     std::thread::spawn(move || loop {
-        let show_data = is_on_clone.load(Ordering::SeqCst);
+        let show_data = is_on_clone2.load(Ordering::SeqCst);
         let mut display = display_clone2.lock().unwrap();
         if !show_data {
-            display.create_black_rectangle();
             println!("Device Off");
             display.draw_image();
-            led_2.set_low().unwrap();
             led_3.set_high().unwrap();
             std::thread::sleep(Duration::from_millis(50));
+        } else {
+            led_3.set_low().unwrap();
         }
+    });
+
+    std::thread::spawn(move || loop {
+        if show_balance_btn.is_low() {
+            println!("balance btn pressed",);
+        } else {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(5000));
+    });
+
+    std::thread::spawn(move || loop {
+        if show_solana_price_btn.is_low() {
+            println!("solana price btn pressed",);
+        } else {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(5000));
+    });
+
+    std::thread::spawn(move || loop {
+        if show_tps_btn.is_low() {
+            println!("show tps btn pressed",);
+        } else {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(5000));
+    });
+
+    std::thread::spawn(move || loop {
+        if show_wallet_qr_code_btn.is_low() {
+            println!("qr code btn pressed",);
+        } else {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(5000));
     });
 
     loop {

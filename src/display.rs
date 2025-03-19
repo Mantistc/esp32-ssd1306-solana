@@ -177,14 +177,14 @@ impl DisplayModule {
         self.create_text(&time, x_time as u8, y, FONT_4X6);
     }
 
-    pub fn show_balance(&mut self, http: &mut Http) {
+    pub fn show_balance(&mut self) {
         self.create_black_rectangle();
         let label = "Sol Balance:";
         let label_x_c = (MAX_WIDTH_SIZE - label.len() * 6) / 2;
         let label_y_c = 16;
 
-        let wallet_balance = http.get_balance(&self.wallet_address).unwrap_or(0);
-        let readable_result = wallet_balance as f32 / LAMPORTS_PER_SOL as f32;
+        // let wallet_balance = http.get_balance(&self.wallet_address).unwrap_or(0);
+        let readable_result = 10u64 as f32 / LAMPORTS_PER_SOL as f32;
 
         let formatted = format!("{:.2}", readable_result);
         let value_x_c = (MAX_WIDTH_SIZE - formatted.len() * 6) / 2;
