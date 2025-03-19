@@ -35,6 +35,7 @@ pub struct DisplayModule {
     >,
     pub wallet_address: String,
 }
+pub const MAX_WIDTH_SIZE: usize = 128;
 
 impl DisplayModule {
     pub fn init(i2c: I2C0, sda: Gpio21, scl: Gpio22, wallet_address: &str) -> Self {
@@ -119,6 +120,7 @@ impl DisplayModule {
     }
 
     pub fn draw_image(&mut self) {
+        self.create_black_rectangle();
         let display = &mut self.display;
         let size = 32i32;
         let raw: ImageRaw<BinaryColor> =
@@ -129,6 +131,7 @@ impl DisplayModule {
     }
 
     pub fn draw_qr_code(&mut self) {
+        self.create_black_rectangle();
         let display = &mut self.display;
         let qr = QrCode::encode_text(&self.wallet_address, QrCodeEcc::Low).unwrap();
         let qr_size = qr.size();
@@ -164,56 +167,53 @@ impl DisplayModule {
         display.flush().unwrap(); // write the data
     }
 
-    pub fn draw_time(&mut self, data: (&str, &str)) {
+    pub fn draw_time(&mut self, http: &mut Http) {
+        self.create_black_rectangle();
+        let (time, date) = http.utc_offset_time().unwrap_or_default();
         let x = 5;
         let y = 64 - 9;
-        let (time, date) = data;
         self.create_text(&date, x as u8, y, FONT_4X6);
         let x_time = 128 - (time.len() * 4) - 5;
         self.create_text(&time, x_time as u8, y, FONT_4X6);
     }
 
-    pub fn perpetual_data(&mut self, http: &mut Http) {
+    pub fn show_balance(&mut self, http: &mut Http) {
         self.create_black_rectangle();
-        let (time, date) = http.utc_offset_time().unwrap_or_default();
-        let max_width_size = 128;
         let label = "Sol Balance:";
-        let label_x_c = (max_width_size - label.len() * 6) / 2;
+        let label_x_c = (MAX_WIDTH_SIZE - label.len() * 6) / 2;
         let label_y_c = 16;
 
         let wallet_balance = http.get_balance(&self.wallet_address).unwrap_or(0);
         let readable_result = wallet_balance as f32 / LAMPORTS_PER_SOL as f32;
 
         let formatted = format!("{:.2}", readable_result);
-        let value_x_c = (max_width_size - formatted.len() * 6) / 2;
+        let value_x_c = (MAX_WIDTH_SIZE - formatted.len() * 6) / 2;
         let value_x_y = 33;
 
         self.create_text(&label, label_x_c as u8, label_y_c, FONT_6X10);
         self.create_text(&formatted, value_x_c as u8, value_x_y, FONT_6X10);
-        self.draw_time((&time, &date));
-
         std::thread::sleep(Duration::from_millis(1500));
+    }
 
-        let (slot, tps) = http.get_tps().unwrap_or_default();
-
+    pub fn show_tps(&mut self, http: &mut Http) {
         self.create_black_rectangle();
-
+        let (slot, tps) = http.get_tps().unwrap_or_default();
         let height_constant = 6 + 5;
         let font_width_4x = 4;
         let font_width_6x = 6;
 
         let slot_label = "Slot:";
-        let slot_label_x_c = (max_width_size - slot_label.len() * font_width_4x) / 2;
+        let slot_label_x_c = (MAX_WIDTH_SIZE - slot_label.len() * font_width_4x) / 2;
         let slot_label_y_c = 8;
 
-        let slot_value_x_c = (max_width_size - slot.to_string().len() * font_width_6x) / 2;
+        let slot_value_x_c = (MAX_WIDTH_SIZE - slot.to_string().len() * font_width_6x) / 2;
         let slot_value_y_c = slot_label_y_c + height_constant;
 
         let tps_label = "TPS:";
-        let tps_label_x_c = (max_width_size - tps_label.len() * font_width_4x) / 2;
+        let tps_label_x_c = (MAX_WIDTH_SIZE - tps_label.len() * font_width_4x) / 2;
         let tps_label_y_c = slot_value_y_c + height_constant + 6;
 
-        let tps_value_x_c = (max_width_size - tps.to_string().len() * font_width_6x) / 2;
+        let tps_value_x_c = (MAX_WIDTH_SIZE - tps.to_string().len() * font_width_6x) / 2;
         let tps_value_y_c = tps_label_y_c + height_constant;
 
         //slot
@@ -224,8 +224,6 @@ impl DisplayModule {
             slot_value_y_c,
             FONT_6X10,
         );
-        self.draw_time((&time, &date));
-
         // tps
         self.create_text(&tps_label, tps_label_x_c as u8, tps_label_y_c, FONT_4X6);
         self.create_text(
@@ -234,20 +232,17 @@ impl DisplayModule {
             tps_value_y_c,
             FONT_6X10,
         );
-        self.draw_time((&time, &date));
-
         std::thread::sleep(Duration::from_millis(1500));
+    }
 
-        let sol_price_label = "Sol USD Price:";
-        let sol_price_label_x_c = (max_width_size - sol_price_label.len() * 6) / 2;
-        let sol_price_label_y_c = 16;
-
-        let sol_price = http.get_solana_price().unwrap_or_default();
-
+    pub fn show_sol_usd_price(&mut self, http: &mut Http) {
         self.create_black_rectangle();
-
+        let sol_price_label = "Sol USD Price:";
+        let sol_price_label_x_c = (MAX_WIDTH_SIZE - sol_price_label.len() * 6) / 2;
+        let sol_price_label_y_c = 16;
+        let sol_price = http.get_solana_price().unwrap_or_default();
         let sol_price_formatted = format!("{:.2}", sol_price);
-        let sol_price_x_c = (max_width_size - sol_price_formatted.len() * 6) / 2;
+        let sol_price_x_c = (MAX_WIDTH_SIZE - sol_price_formatted.len() * 6) / 2;
         let sol_price_x_y = 33;
 
         self.create_text(
@@ -262,15 +257,7 @@ impl DisplayModule {
             sol_price_x_y,
             FONT_6X10,
         );
-        self.draw_time((&time, &date));
 
         std::thread::sleep(Duration::from_millis(1500));
-
-        self.create_black_rectangle();
-
-        // draw the QR code
-        self.draw_qr_code();
-
-        std::thread::sleep(Duration::from_secs(6));
     }
 }

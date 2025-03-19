@@ -6,14 +6,20 @@ use esp_idf_svc::http::{
 };
 use serde::Serialize;
 use serde_json::json;
-use std::error::Error;
+use std::{
+    error::Error,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 pub const LAMPORTS_PER_SOL: u32 = 1_000_000_000;
 
 pub struct Http {
     sol_endpoint: String,
-    http_client: Client<EspHttpConnection>,
+    http_client: Arc<Mutex<Client<EspHttpConnection>>>,
 }
+
+unsafe impl Send for Http {}
 
 impl Http {
     pub fn init(endpoint: &str) -> Result<Self, Box<dyn Error>> {
@@ -26,7 +32,7 @@ impl Http {
         let client = Client::wrap(connection);
         Ok(Self {
             sol_endpoint: endpoint.to_string(),
-            http_client: client,
+            http_client: Arc::new(Mutex::new(client)),
         })
     }
 
@@ -37,7 +43,7 @@ impl Http {
         headers: &[(&str, &str)],
         payload: Option<&str>,
     ) -> Result<serde_json::Value, Box<dyn Error>> {
-        let client = &mut self.http_client;
+        let client = &mut self.http_client.lock().unwrap();
         let mut request = client.request(method, uri, &headers)?;
         if let Some(payload_str) = payload {
             request.write(payload_str.as_bytes())?;
@@ -91,8 +97,25 @@ impl Http {
             ("Content-Length", &payload_str.len().to_string()),
         ];
         let endpoint = self.sol_endpoint.clone();
-        let result = self.http_request(Method::Post, &endpoint, &headers, Some(&payload_str))?;
-        Ok(result["result"].clone())
+        let max_retries = 3;
+        let mut attempts = 0;
+
+        while attempts < max_retries {
+            match self.http_request(Method::Post, &endpoint, &headers, Some(&payload_str)) {
+                Ok(value) => return Ok(value["result"].clone()),
+                Err(e) => {
+                    attempts += 1;
+                    println!("attempt {}/{} failed: {}", attempts, max_retries, e);
+                    if attempts < max_retries {
+                        std::thread::sleep(Duration::from_millis(1500));
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err("Unexpected failure after retries".into())
     }
 
     pub fn get_balance(&mut self, wallet: &str) -> Result<u64, Box<dyn Error>> {
@@ -149,23 +172,39 @@ impl Http {
     pub fn utc_offset_time(&mut self) -> Result<(String, String), Box<dyn std::error::Error>> {
         let headers = [("accept", "application/json")];
         let url = "https://timeapi.io/api/time/current/zone?timeZone=America/Bogota";
-        match self.http_request(Method::Get, &url, &headers, None) {
-            Ok(response) => {
-                let year = response["year"].as_i64().unwrap_or(0);
-                let month = response["month"].as_i64().unwrap_or(0);
-                let day = response["day"].as_i64().unwrap_or(0);
-                let hour = response["hour"].as_i64().unwrap_or(0);
-                let minute = response["minute"].as_i64().unwrap_or(0);
-                let seconds = response["seconds"].as_i64().unwrap_or(0);
 
-                let date_string = format!("{}-{:02}-{:02}", year, month, day);
-                let time_string = format!("{:02}:{:02}:{:02}", hour, minute, seconds);
-                Ok((time_string, date_string))
-            }
-            Err(e) => {
-                println!("Error occurred: {}", e);
-                Ok((String::new(), String::new()))
+        let max_retries = 3;
+        let mut attempts = 0;
+
+        while attempts < max_retries {
+            match self.http_request(Method::Get, &url, &headers, None) {
+                Ok(response) => {
+                    let year = response["year"].as_i64().unwrap_or(0);
+                    let month = response["month"].as_i64().unwrap_or(0);
+                    let day = response["day"].as_i64().unwrap_or(0);
+                    let hour = response["hour"].as_i64().unwrap_or(0);
+                    let minute = response["minute"].as_i64().unwrap_or(0);
+                    let seconds = response["seconds"].as_i64().unwrap_or(0);
+
+                    let date_string = format!("{}-{:02}-{:02}", year, month, day);
+                    let time_string = format!("{:02}:{:02}:{:02}", hour, minute, seconds);
+                    return Ok((time_string, date_string));
+                }
+                Err(e) => {
+                    attempts += 1;
+                    println!("Attempt {}/{} failed: {}", attempts, max_retries, e);
+
+                    if attempts < max_retries {
+                        println!("retrying in 1 second...");
+                        std::thread::sleep(Duration::from_millis(1500));
+                    } else {
+                        println!("all attempts failed.");
+                        return Err(e);
+                    }
+                }
             }
         }
+
+        Err("Unexpected failure after retries".into())
     }
 }

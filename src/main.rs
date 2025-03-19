@@ -1,7 +1,7 @@
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -59,15 +59,33 @@ fn main() {
     let mut led_1 = PinDriver::output(peripherals.pins.gpio19).unwrap();
     let mut led_2 = PinDriver::output(peripherals.pins.gpio14).unwrap();
     let mut led_3 = PinDriver::output(peripherals.pins.gpio15).unwrap();
-    let mut button = PinDriver::input(peripherals.pins.gpio18).unwrap();
-    button.set_pull(Pull::Up).unwrap();
+    let mut off_btn = PinDriver::input(peripherals.pins.gpio18).unwrap();
+    off_btn.set_pull(Pull::Up).unwrap();
+
+    let mut show_balance_btn = PinDriver::input(peripherals.pins.gpio4).unwrap();
+    show_balance_btn.set_pull(Pull::Up).unwrap();
+
+    let mut show_tps_btn = PinDriver::input(peripherals.pins.gpio13).unwrap();
+    show_tps_btn.set_pull(Pull::Up).unwrap();
+
+    let mut show_solana_price_btn = PinDriver::input(peripherals.pins.gpio26).unwrap();
+    show_solana_price_btn.set_pull(Pull::Up).unwrap();
+
+    let mut show_wallet_qr_code_btn = PinDriver::input(peripherals.pins.gpio27).unwrap();
+    show_wallet_qr_code_btn.set_pull(Pull::Up).unwrap();
 
     let is_on = Arc::new(AtomicBool::new(true));
     let is_on_clone = Arc::clone(&is_on);
-    let mut display_module = DisplayModule::init(i2c, sda, scl, &app_config.wallet_address);
+
+    let display_module = Arc::new(Mutex::new(DisplayModule::init(
+        i2c,
+        sda,
+        scl,
+        &app_config.wallet_address,
+    )));
 
     std::thread::spawn(move || loop {
-        if button.is_low() {
+        if off_btn.is_low() {
             is_on_clone.store(!is_on_clone.load(Ordering::SeqCst), Ordering::SeqCst);
             println!(
                 "Button toggled. is_on: {}",
@@ -77,16 +95,20 @@ fn main() {
             std::thread::sleep(Duration::from_millis(500)); // pulse btn time
             continue;
         }
-        std::thread::sleep(Duration::from_millis(10000)); // min time to change the state (On,Off) again
+        std::thread::sleep(Duration::from_millis(5000)); // min time to change the state (On,Off) again
     });
 
-    // initialize display
 
     let solana_cool_app_text = "Connecting wifi...";
 
-    led_1.set_high().unwrap();
+    {
+        let mut display = display_module.lock().unwrap();
+        display.create_centered_text(solana_cool_app_text, FONT_6X10);
+        std::thread::sleep(Duration::from_millis(3000));
+        display.create_black_rectangle();
+    }
 
-    display_module.create_centered_text(&solana_cool_app_text, FONT_6X10);
+    led_1.set_high().unwrap();
 
     // initialize wifi
     let _wifi = wifi(
@@ -95,40 +117,57 @@ fn main() {
         app_config.wifi_psk,
     );
 
-    let mut http = Http::init(&app_config.sol_rpc).expect("Http module initialization failed");
-    display_module.create_black_rectangle();
+    let _sntp = EspSntp::new_default().unwrap();
 
     let device_ready = "Device Ready";
 
-    led_1.set_high().unwrap();
-
-    display_module.create_centered_text(&device_ready, FONT_6X10);
-
-    let _sntp = EspSntp::new_default().unwrap();
-
-    std::thread::sleep(Duration::from_millis(3000));
+    {
+        let mut display = display_module.lock().unwrap();
+        display.create_centered_text(device_ready, FONT_6X10);
+        std::thread::sleep(Duration::from_millis(3000));
+        display.create_black_rectangle();
+    }
 
     led_1.set_low().unwrap();
-    let mut previous_state = true;
-    loop {
-        let show_data = is_on.load(Ordering::SeqCst);
+
+
+    // After device is ready, we're going to separate into threads
+    // with that, we can control all 
+
+    let display_clone1 = Arc::clone(&display_module);
+    let is_on_clone = Arc::clone(&is_on);
+    let http = Arc::new(Mutex::new(
+        Http::init(&app_config.sol_rpc).expect("Http module initialization failed"),
+    ));
+    let http_clone = Arc::clone(&http);
+
+    std::thread::spawn(move || loop {
+        let mut http = http_clone.lock().unwrap();
+        let mut display = display_clone1.lock().unwrap();
+        let show_data = is_on_clone.load(Ordering::SeqCst);
         if show_data {
-            led_2.set_high().unwrap();
-            display_module.create_black_rectangle();
-            if !previous_state {
-                previous_state = true;
-            }
-            led_3.set_low().unwrap();
-            display_module.perpetual_data(&mut http);
-        } else if !show_data && previous_state {
-            display_module.create_black_rectangle();
+            display.show_balance(&mut http);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let is_on_clone = Arc::clone(&is_on);
+    let display_clone2 = Arc::clone(&display_module);
+
+    std::thread::spawn(move || loop {
+        let show_data = is_on_clone.load(Ordering::SeqCst);
+        let mut display = display_clone2.lock().unwrap();
+        if !show_data {
+            display.create_black_rectangle();
             println!("Device Off");
-            display_module.draw_image();
+            display.draw_image();
             led_2.set_low().unwrap();
             led_3.set_high().unwrap();
-            previous_state = false;
-            std::thread::sleep(Duration::from_millis(3000));
+            std::thread::sleep(Duration::from_millis(50));
         }
+    });
+
+    loop {
         std::thread::sleep(Duration::from_millis(500));
     }
 }
